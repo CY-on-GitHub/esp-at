@@ -108,6 +108,8 @@ static char *s_at_web_redirect_url = NULL;
 #define ESP_AT_WEB_HEADER_AUTH_NAME                    ("Object")
 #define ESP_AT_UPGRADE_PARTITION_NAME                  ("ota")
 
+#define MODIFY_BY_ZHY
+
 extern void at_wifi_reconnect_stop(void);
 extern void at_wifi_reconnect_init(bool force);
 extern esp_err_t at_wifi_connect(void);
@@ -1002,6 +1004,11 @@ static esp_err_t at_web_apply_wifi_connect_info(int32_t udp_port)
     struct sockaddr_in unicast_addr = {0};
     char sendline[64] = {0};
     char rx_buffer[32] = {0};
+#if defined(MODIFY_BY_ZHY)
+    char rsp_buf[128];
+    wifi_sta_connect_config_t sta_connect_backup;
+    memcpy(&sta_connect_backup, connect_config, sizeof(wifi_sta_connect_config_t));
+#endif
     // Calculate the max connect time,unit: s
     int32_t connect_timeout = reconnnect_timeout - ESP_AT_WEB_BROADCAST_TIMES_DEFAULT * ESP_AT_WEB_BROADCAST_INTERVAL_DEFAULT / 1000000;
 
@@ -1068,7 +1075,18 @@ static esp_err_t at_web_apply_wifi_connect_info(int32_t udp_port)
             connection_info.config_status = ESP_AT_WIFI_STA_CONNECT_FAIL;
             at_wifi_reconnect_stop();
             at_web_update_sta_connection_info(&connection_info);
+#if defined(MODIFY_BY_ZHY)
+            memset(rsp_buf, 0, sizeof(rsp_buf));
+            strcat(rsp_buf, s_wifi_conncet_finish_response);
+            strcat(rsp_buf, (char *)sta_connect_backup.ssid);
+            strcat(rsp_buf, "\r\n");
+            strcat(rsp_buf, (char *)sta_connect_backup.password);
+            strcat(rsp_buf, "\r\n");
+            strcat(rsp_buf, "\r\n");
+            esp_at_port_active_write_data((uint8_t*)rsp_buf, strlen(rsp_buf));
+#else
             esp_at_port_active_write_data((uint8_t*)s_wifi_conncet_finish_response, strlen(s_wifi_conncet_finish_response));
+#endif
         } else { // connect ok
             ESP_LOGI(TAG, "Connect router success");
             ret = esp_netif_get_ip_info(sta_if, &sta_ip);
@@ -1133,7 +1151,18 @@ static esp_err_t at_web_apply_wifi_connect_info(int32_t udp_port)
             if (send_count == 0) { // can not received ack message from WeChat.
                 ESP_LOGW(TAG, "not receive ack message from WeChat");
             } else { // received ack message from WeChat.
+#if defined(MODIFY_BY_ZHY)
+                memset(rsp_buf, 0, sizeof(rsp_buf));
+                strcat(rsp_buf, s_wifi_conncet_finish_response);
+                strcat(rsp_buf, (char *)sta_connect_backup.ssid);
+                strcat(rsp_buf, "\r\n");
+                strcat(rsp_buf, (char *)sta_connect_backup.password);
+                strcat(rsp_buf, "\r\n");
+                strcat(rsp_buf, "\r\n");
+                esp_at_port_active_write_data((uint8_t*)rsp_buf, strlen(rsp_buf));
+#else
                 esp_at_port_active_write_data((uint8_t*)s_wifi_conncet_finish_response, strlen(s_wifi_conncet_finish_response));
+#endif
             }
         }
     }
@@ -1287,7 +1316,10 @@ static esp_err_t accept_wifi_result_post_handler(httpd_req_t *req)
     int32_t received_flag;
     char temp[4] = {0};
     int str_len = 0;
-
+#if defined(MODIFY_BY_ZHY)
+    char rsp_buf[128];
+    wifi_sta_connect_config_t *connect_config = at_web_get_sta_connect_config();
+#endif
     wifi_sta_connection_info_t wifi_connection_info = {0};
     wifi_sta_connection_info_t *connection_info = at_web_get_sta_connection_info();
     memset(buf, '\0', ESP_AT_WEB_SCRATCH_BUFSIZE * sizeof(char));
@@ -1298,7 +1330,18 @@ static esp_err_t accept_wifi_result_post_handler(httpd_req_t *req)
         break;
     case ESP_AT_WIFI_STA_CONFIG_DONE:
     case ESP_AT_WIFI_STA_CONNECTING:
+#if defined(MODIFY_BY_ZHY)
+        memset(rsp_buf, 0, sizeof(rsp_buf));
+        strcat(rsp_buf, s_wifi_conncet_finish_response);
+        strcat(rsp_buf, (char *)connect_config->ssid);
+        strcat(rsp_buf, "\r\n");
+        strcat(rsp_buf, (char *)connect_config->password);
+        strcat(rsp_buf, "\r\n");
+        strcat(rsp_buf, "\r\n");
+        esp_at_port_active_write_data((uint8_t*)rsp_buf, strlen(rsp_buf));
+#else
         esp_at_port_active_write_data((uint8_t*)s_wifi_conncet_finish_response, strlen(s_wifi_conncet_finish_response));
+#endif
         break;
     case ESP_AT_WIFI_STA_CONNECT_FAIL:
     case ESP_AT_WIFI_STA_CONNECT_OK:
@@ -1320,11 +1363,25 @@ static esp_err_t accept_wifi_result_post_handler(httpd_req_t *req)
         // clear wifi connect config and status info
         wifi_connection_info.config_status = ESP_AT_WIFI_STA_NOT_START;
 
+#if defined(MODIFY_BY_ZHY)
+        memset(rsp_buf, 0, sizeof(rsp_buf));
+        strcat(rsp_buf, s_wifi_conncet_finish_response);
+        strcat(rsp_buf, (char *)connect_config->ssid);
+        strcat(rsp_buf, "\r\n");
+        strcat(rsp_buf, (char *)connect_config->password);
+        strcat(rsp_buf, "\r\n");
+        strcat(rsp_buf, "\r\n");
+        
+        at_web_clear_sta_connect_config();
+        at_web_update_sta_connection_info(&wifi_connection_info);
+        esp_at_port_active_write_data((uint8_t*)rsp_buf, strlen(rsp_buf));
+#else
         at_web_clear_sta_connect_config();
         at_web_update_sta_connection_info(&wifi_connection_info);
 
         // send a message to MCU
         esp_at_port_active_write_data((uint8_t*)s_wifi_conncet_finish_response, strlen(s_wifi_conncet_finish_response));
+#endif
         break;
     default:
         break;
